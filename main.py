@@ -23,7 +23,7 @@ CSV_FILE = "ajmal_sweets_sales.csv"
 def initialize_csv():
     """Create CSV file if it doesn't exist"""
     if not os.path.exists(CSV_FILE):
-        df = pd.DataFrame(columns=["id", "date", "phone_no", "item", "price", "time"])
+        df = pd.DataFrame(columns=["id", "date", "phone_no", "item", "quantity", "price", "time"])
         df.to_csv(CSV_FILE, index=False)
 
 # -----------------------------
@@ -35,9 +35,9 @@ def load_data():
         return pd.read_csv(CSV_FILE)
     except (FileNotFoundError, pd.errors.EmptyDataError):
         # Return empty DataFrame if file doesn't exist or is empty
-        return pd.DataFrame(columns=["id", "date", "phone_no", "item", "price", "time"])
+        return pd.DataFrame(columns=["id", "date", "phone_no", "item", "quantity", "price", "time"])
 
-def save_data(date, phone_no, item, price):
+def save_data(date, phone_no, item, quantity, price):
     """Save new sales entry to CSV file"""
     df = load_data()
 
@@ -51,6 +51,7 @@ def save_data(date, phone_no, item, price):
         "date": date,
         "phone_no": phone_no,
         "item": item,
+        "quantity": quantity,
         "price": price,
         "time": timestamp
     }])
@@ -60,6 +61,11 @@ def save_data(date, phone_no, item, price):
     df.to_csv(CSV_FILE, index=False)
 
     return new_row.iloc[0].to_dict()
+
+def clear_all_data():
+    """Clear all data from CSV file"""
+    df = pd.DataFrame(columns=["id", "date", "phone_no", "item", "quantity", "price", "time"])
+    df.to_csv(CSV_FILE, index=False)
 
 # -----------------------------
 # Streamlit UI
@@ -87,9 +93,10 @@ def main():
         with col1:
             date = st.date_input("📅 Date", value=datetime.now())
             phone_no = st.text_input("📞 Phone Number", placeholder="e.g., +91-XXXXXXXXXX")
+            item = st.text_input("🍬 Item", placeholder="e.g., Gulab Jamun, Barfi, etc.")
         
         with col2:
-            item = st.text_input("🍬 Item", placeholder="e.g., Gulab Jamun, Barfi, etc.")
+            quantity = st.number_input("📦 Quantity", min_value=1, step=1, value=1)
             price = st.number_input("💰 Price (₹)", min_value=0.0, step=1.0, format="%.2f")
 
         submit_button = st.form_submit_button("💾 Save Entry")
@@ -99,11 +106,13 @@ def main():
                 st.error("⚠️ Item name cannot be empty.")
             elif phone_no.strip() == "":
                 st.error("⚠️ Phone number cannot be empty.")
+            elif quantity <= 0:
+                st.error("⚠️ Quantity must be greater than zero.")
             elif price <= 0:
                 st.error("⚠️ Price must be greater than zero.")
             else:
                 try:
-                    new_entry = save_data(date.strftime("%Y-%m-%d"), phone_no, item, price)
+                    new_entry = save_data(date.strftime("%Y-%m-%d"), phone_no, item, quantity, price)
                     st.success(f"✅ Entry saved successfully! Entry ID: {new_entry['id']}")
                 except Exception as e:
                     st.error(f"❌ Error saving entry: {str(e)}")
@@ -126,9 +135,9 @@ def main():
                 total_sales = df['price'].sum()
                 st.metric("Total Sales", f"₹{total_sales:,.2f}")
         with col3:
-            if 'price' in df.columns and not df.empty:
-                avg_sale = df['price'].mean()
-                st.metric("Average Sale", f"₹{avg_sale:,.2f}")
+            if 'quantity' in df.columns and not df.empty:
+                total_items = df['quantity'].sum()
+                st.metric("Total Items Sold", f"{int(total_items)}")
         with col4:
             if 'date' in df.columns and not df.empty:
                 today = datetime.now().strftime("%Y-%m-%d")
@@ -147,19 +156,50 @@ def main():
                 "date": "Date",
                 "phone_no": "Phone Number",
                 "item": "Item",
+                "quantity": st.column_config.NumberColumn("Quantity", format="%d"),
                 "price": st.column_config.NumberColumn("Price (₹)", format="₹%.2f"),
                 "time": "Time"
             }
         )
 
-        # Download button
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Download Sales Records as CSV",
-            data=csv,
-            file_name=f"ajmal_sweets_sales_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
-        )
+        # Action buttons row
+        st.divider()
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col1:
+            # Download button
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Sales Records as CSV",
+                data=csv,
+                file_name=f"ajmal_sweets_sales_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+            )
+        
+        with col3:
+            # Clear all data button with confirmation
+            if st.button("🗑️ Clear All Data", type="secondary", use_container_width=True):
+                st.session_state.show_clear_confirmation = True
+        
+        # Confirmation dialog
+        if st.session_state.get('show_clear_confirmation', False):
+            st.warning("⚠️ **Warning**: This will permanently delete all sales records!")
+            confirm_col1, confirm_col2, confirm_col3 = st.columns([1, 1, 2])
+            
+            with confirm_col1:
+                if st.button("✅ Yes, Delete All", type="primary"):
+                    try:
+                        clear_all_data()
+                        st.session_state.show_clear_confirmation = False
+                        st.success("✅ All data has been cleared successfully!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Error clearing data: {str(e)}")
+            
+            with confirm_col2:
+                if st.button("❌ Cancel"):
+                    st.session_state.show_clear_confirmation = False
+                    st.rerun()
 
 if __name__ == "__main__":
     main()
